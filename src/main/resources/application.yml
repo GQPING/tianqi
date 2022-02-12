@@ -12,3 +12,17 @@ spring:
     pathmatch:
       # 路由匹配策略
       matching-strategy: ANT_PATH_MATCHER
+  datasource:
+     driverClassName: com.mysql.cj.jdbc.Driver
+     url: jdbc:mysql://localhost:3306/tianqi?useUnicode=true&characterEncoding=UTF-8
+     username: root
+     password: 123456
+
+mybatis:
+  # 搜索指定包别名
+  type-aliases-package: com.tianqi.demo.app.domain
+  # 配置mapper的扫描，找到所有的mapper.xml映射文件
+  mapper-locations: classpath*:mapper/**/*Mapper.xml
+  # 开启驼峰命名
+  configuration:
+      map-underscore-to-camel-case: true

@@ -8,13 +8,16 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.util.EntityUtils;
-import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.DocumentHelper;
-import org.dom4j.Element;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -29,18 +32,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -178,6 +175,7 @@ public class TestController {
 
     /**
      * http解压缩字符串
+     *
      * @param response
      * @return
      */
@@ -217,6 +215,7 @@ public class TestController {
 
     /**
      * 是否是GZIP格式
+     *
      * @param data
      * @return
      */
@@ -236,7 +235,7 @@ public class TestController {
             try {
                 // 获取到解压缩之后的字符串
                 String jsonXml = getJsonStringFromGZIP(response);
-                Resp content = (Resp)UtilXml.xmlStrToObject(Resp.class,jsonXml);
+                Resp content = (Resp) UtilXml.xmlStrToObject(Resp.class, jsonXml);
                 return PfResponse.success(content);
             } catch (DocumentException e) {
                 e.printStackTrace();
@@ -245,5 +244,70 @@ public class TestController {
         } else {
             return PfResponse.error("访问失败" + response.getStatusLine().getStatusCode());
         }
+    }
+
+    @GetMapping("crawTest")
+    @ApiOperation(value = "爬取城市ID对应关系")
+    private void crawTest() throws Exception {
+        for (long j = 101010100; j < 101360000; j += 10000) {
+            //标记无效页面
+            int countInvalid = 0;
+            for (long i = j; i < 101350000; i++) {
+
+                String url = "http://www.weather.com.cn/weather1d/" + i + ".shtml";
+
+                String html = CrawUtil.getHtml(url);
+
+                StringBuilder sb = new StringBuilder();
+
+                if (html != null && html.length() > 20) {
+                    //计数归零
+                    countInvalid = 0;
+
+                    File file = new File("D:\\temp\\" + i + ".txt");
+
+                    //解析Html
+                    Document document = (Document) Jsoup.parse(html);
+                    Elements lis = document.select("#select ul").select("li");
+                    for (Element li : lis) {
+                        String cityCode = li.attr("tip");
+                        String cityName = li.text();
+                        sb.append(cityCode + "\t" + cityName + "\r\n");
+                    }
+                    log.info(sb.toString());
+                    //FileUtils.writeStringToFile(file, sb.toString(), "UTF-8");
+                } else {
+                    //连续100次出现无效页面，退出内循环
+                    countInvalid++;
+                    if (countInvalid > 100) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    @GetMapping("crawData")
+    @ApiOperation(value = "处理爬取城市ID对应关系")
+    private void crawData() throws Exception {
+        File[] files = new File("D:\\temp\\weatherCitycode").listFiles();
+
+        File outFile = new File("D:\\temp\\weatherCitycode.txt");
+
+        List<String> cityList = new ArrayList<String>();
+        for (int idx = 0; idx < files.length; idx++) {
+            File curFile = files[idx];
+
+            List<String> lines = FileUtils.readLines(curFile, "UTF-8");
+
+            for (String line : lines) {
+                if (!cityList.contains(line)) {
+                    cityList.add(line);
+                }
+            }
+        }
+
+        FileUtils.writeLines(outFile, cityList);
+        System.out.println(cityList.size());
     }
 }
