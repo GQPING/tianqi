@@ -1,0 +1,14 @@
+server:
+  port: 28081
+  servlet:
+    context-path: /
+  tomcat:
+    max-threads: 800
+    uri-encoding: UTF-8
+    min-spare-threads: 30
+
+spring:
+  mvc:
+    pathmatch:
+      # 路由匹配策略
+      matching-strategy: ANT_PATH_MATCHER
