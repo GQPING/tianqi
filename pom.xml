@@ -92,6 +92,12 @@
         </dependency>
 
         <dependency>
+            <groupId>com.mzlion</groupId>
+            <artifactId>easy-okhttp</artifactId>
+            <version>1.0.0-Final</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>

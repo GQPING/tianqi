@@ -7,7 +7,6 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.util.EntityUtils;
 import org.dom4j.Document;
@@ -15,6 +14,7 @@ import org.dom4j.DocumentException;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -30,6 +30,7 @@ import org.springframework.web.client.RestTemplate;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -103,14 +104,53 @@ public class TestController {
                                 @ApiParam("城市") @RequestParam(defaultValue = "郑州") String city,
                                 @ApiParam("县区") @RequestParam(defaultValue = "中原") String country) {
         try {
-            String url = "https://wis.qq.com/weather/common?source=pc&province=" + province + "&city=" + city + "&country=" + country + "&weather_type=observe";
             // 客户端
             RestTemplate client = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.add("Accept", MediaType.APPLICATION_JSON.toString());
-            //将获取的结果转换为json字符串形式
+
+//            //第一种
+//            String url = "https://wis.qq.com/weather/common/{source}/{province}/{city}/{country}/{weather_type}";
+//            Map<String, String> params = new HashMap<>();
+//            params.put("source", "pc");
+//            params.put("province", province);
+//            params.put("city", city);
+//            params.put("country", country);
+//            params.put("weather_type", "observe");
+//            //将获取的结果转换为json字符串形式
+//            String jsonString = client.getForObject(url, String.class, params);
+
+            //第2种
+            String url = "https://wis.qq.com/weather/common?source=pc&province=河南&city=郑州&country=中原&weather_type=observe";
+//            //第3种
+//            String url = "https://wis.qq.com/weather/common?source=pc&province="
+//                    + URLEncoder.encode(province , "UTF-8")
+//                    + "&city=" + URLEncoder.encode(city, "UTF-8")
+//                    + "&country=" + URLEncoder.encode(country, "UTF-8") + "&weather_type=observe";
+
             String jsonString = client.getForObject(url, String.class);
+            JSONObject jsonObject = JSONObject.parseObject(jsonString);
+            return PfResponse.success(jsonObject.get("data"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return PfResponse.error("异常：" + e.getMessage());
+        }
+    }
+
+    @GetMapping("getJson4")
+    @ApiOperation(value = "获取Json天气数据")
+    private PfResponse getJson4(@ApiParam("省份") @RequestParam(defaultValue = "河南") String province,
+                                @ApiParam("城市") @RequestParam(defaultValue = "郑州") String city,
+                                @ApiParam("县区") @RequestParam(defaultValue = "中原") String country) {
+        try {
+            //第一种
+            String url = "https://wis.qq.com/weather/common";
+            Map<String, String> params = new HashMap<>();
+            params.put("source", "pc");
+            params.put("province", province);
+            params.put("city", city);
+            params.put("country", country);
+            params.put("weather_type", "observe");
+            //将获取的结果转换为json字符串形式
+            String jsonString = UtilHttps.doGet(url, params, String.class);
             JSONObject jsonObject = JSONObject.parseObject(jsonString);
             return PfResponse.success(jsonObject.get("data"));
         } catch (Exception e) {
@@ -194,11 +234,25 @@ public class TestController {
     @GetMapping("getXml2")
     @ApiOperation(value = "获取Xml天气数据")
     private PfResponse getXml2(@ApiParam("城市拼音") @RequestParam(defaultValue = "kaifeng") String city) throws MalformedURLException {
-
         String path = "https://flash.weather.com.cn/wmaps/xml/" + city + ".xml";
+        URL url = new URL(path);
         try {
-            Document document = UtilXml.getDoc(path);
-            return PfResponse.success();
+            Document document = UtilXml.parse(url);
+            Element rootElement = document.getRootElement();
+            Map<String, Object> result = new LinkedHashMap<>();
+            //所有市县
+            List<Element> elements = rootElement.elements();
+            if (elements != null) {
+                for(Element element : elements){
+                    Map<String,String> data = new HashMap<>();
+                    data.put("城市", element.elementText("cityname"));
+                    data.put("最高温度", element.elementText("tem1"));
+                    data.put("最低温度", element.elementText("tem2"));
+                    data.put("数据时间", element.elementText("time"));
+                    result.put(element.elementText("cityname"),data);
+                }
+            }
+            return PfResponse.success(result);
         } catch (DocumentException e) {
             e.printStackTrace();
             return PfResponse.error("异常：" + e.getMessage());
