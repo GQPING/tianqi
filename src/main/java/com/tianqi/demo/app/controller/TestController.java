@@ -1,6 +1,7 @@
 package com.tianqi.demo.app.controller;
 
 import com.alibaba.fastjson.JSONObject;
+import com.tianqi.demo.app.domain.xml.Resp;
 import com.tianqi.demo.app.service.CityDataService;
 import com.tianqi.demo.utils.*;
 import io.swagger.annotations.Api;
@@ -8,6 +9,7 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpResponse;
+import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.util.EntityUtils;
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
@@ -27,7 +29,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -36,6 +41,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.GZIPInputStream;
 
 /**
  * @author cxw
@@ -170,92 +176,74 @@ public class TestController {
         }
     }
 
+    /**
+     * http解压缩字符串
+     * @param response
+     * @return
+     */
+    private String getJsonStringFromGZIP(HttpResponse response) {
+        String jsonString = null;
+        try {
+            InputStream is = response.getEntity().getContent();
+            BufferedInputStream bis = new BufferedInputStream(is);
+            bis.mark(2);
+            // 取前两个字节
+            byte[] header = new byte[2];
+            int result = bis.read(header);
+            // reset输入流到开始位置
+            bis.reset();
+            // 判断是否是GZIP格式
+            int headerData = getShort(header);
+            if (result != -1 && headerData == 0x1f8b) {
+                is = new GZIPInputStream(bis);
+            } else {
+                is = bis;
+            }
+            InputStreamReader reader = new InputStreamReader(is, "utf-8");
+            char[] data = new char[100];
+            int readSize;
+            StringBuffer sb = new StringBuffer();
+            while ((readSize = reader.read(data)) > 0) {
+                sb.append(data, 0, readSize);
+            }
+            jsonString = sb.toString();
+            bis.close();
+            reader.close();
+        } catch (Exception e) {
+            log.error("HttpTask", e.toString(), e);
+        }
+        return jsonString;
+    }
+
+    /**
+     * 是否是GZIP格式
+     * @param data
+     * @return
+     */
+    private int getShort(byte[] data) {
+        return (int) ((data[0] << 8) | data[1] & 0xFF);
+    }
+
     @GetMapping("getXml1")
     @ApiOperation(value = "获取Xml天气数据")
     private PfResponse getXml1(@ApiParam("城市名称") @RequestParam(defaultValue = "兰考县") String city) throws Exception {
+        //第一种
         Map<String, String> params = new LinkedHashMap<>();
         params.put("city", city);
-        Map<String,String> headers = new LinkedHashMap<>();
-        headers.put("Accept-Encoding","gzip,deflate;");
-        headers.put("Accept-Language","zh-CN,zh;q=0.9,en;q=0.8");
-        headers.put("Accept","text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
-        HttpResponse response = HttpUtil.doGet("http://wthrcdn.etouch.cn", "/WeatherApi","get", headers, params);
+        HttpResponse response = HttpUtil.doGet("http://wthrcdn.etouch.cn", "/WeatherApi",
+                "get", null, params);
         if (response.getStatusLine().getStatusCode() == 200) {
-            //将获取的结果转换为json字符串形式
-            String jsonString = EntityUtils.toString(response.getEntity());
             try {
-                Document document = DocumentHelper.parseText(jsonString);
-                Element rootElement = document.getRootElement();
-                Map<String, String> map = new LinkedHashMap<>();
-
-                String cityName = rootElement.elementText("city");
-                map.put("城市", cityName);
-                String updatetime = rootElement.elementText("updatetime");
-                map.put("更新时间", cityName);
-                String wendu = rootElement.elementText("wendu");
-                map.put("温度", cityName);
-
-                String shidu = rootElement.elementText("shidu");
-                map.put("湿度", cityName);
-                String fengxiang = rootElement.elementText("fengxiang");
-                map.put("风向", cityName);
-                String sunrise_1 = rootElement.elementText("sunrise_1");
-                map.put("日出", cityName);
-                String sunset_1 = rootElement.elementText("sunset_1");
-                map.put("日落", cityName);
-
-                //昨日
-                Element yesterday = rootElement.element("yesterday");
-                List<Element> yesterdayList = yesterday.elements();
-                if (yesterdayList != null) {
-                    Element element = yesterdayList.get(0);
-                    map.put("昨天", element.elementText("date_1"));
-                    map.put("最高温度", element.elementText("high_1"));
-                    map.put("最低温度", element.elementText("low_1"));
-                }
-
-                //预测
-                Element forecast = rootElement.element("forecast");
-                List<Element> forecastList = forecast.elements();
-                if (forecastList != null) {
-                    //预测4天的数据
-                }
-
-                return PfResponse.success(map);
+                // 获取到解压缩之后的字符串
+                String jsonXml = getJsonStringFromGZIP(response);
+                Resp content = (Resp)UtilXml.xmlStrToObject(Resp.class,jsonXml);
+                return PfResponse.success(content);
             } catch (DocumentException e) {
                 e.printStackTrace();
                 return PfResponse.error("异常：" + e.getMessage());
             }
-        }else{
+        } else {
             return PfResponse.error("访问失败" + response.getStatusLine().getStatusCode());
-        }
-    }
-
-    @GetMapping("getXml2")
-    @ApiOperation(value = "获取Xml天气数据")
-    private PfResponse getXml2(@ApiParam("城市拼音") @RequestParam(defaultValue = "kaifeng") String city) throws MalformedURLException {
-        String path = "https://flash.weather.com.cn/wmaps/xml/" + city + ".xml";
-        URL url = new URL(path);
-        try {
-            Document document = UtilXml.parse(url);
-            Element rootElement = document.getRootElement();
-            Map<String, Object> result = new LinkedHashMap<>();
-            //所有市县
-            List<Element> elements = rootElement.elements();
-            if (elements != null) {
-                for(Element element : elements){
-                    Map<String,String> data = new HashMap<>();
-                    data.put("城市", element.elementText("cityname"));
-                    data.put("最高温度", element.elementText("tem1"));
-                    data.put("最低温度", element.elementText("tem2"));
-                    data.put("数据时间", element.elementText("time"));
-                    result.put(element.elementText("cityname"),data);
-                }
-            }
-            return PfResponse.success(result);
-        } catch (DocumentException e) {
-            e.printStackTrace();
-            return PfResponse.error("异常：" + e.getMessage());
         }
     }
 }
